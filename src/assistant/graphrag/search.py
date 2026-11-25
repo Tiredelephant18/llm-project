@@ -1,6 +1,7 @@
 """Локальный поиск по графу и обзорный поиск по сводкам."""
 
 import json
+from collections import Counter
 from collections.abc import Iterable
 from itertools import combinations, pairwise
 
@@ -24,14 +25,35 @@ _LOCAL_PROMPT = (
 
 def local_search(question: str, kb: KnowledgeBase, llm: LLMClient) -> Answer:
     """Находит связи около сущностей из вопроса и передаёт их модели."""
-    graph = kb.graph
+    anchors = _anchors(question, kb) or set()
+    facts, sources = _local_context(kb.graph, _nearby_edges(kb.graph, anchors, question))
+    if not facts:
+        return Answer(_NOT_FOUND, refused=True)
+    context = "\n".join(f"{i}. {fact}" for i, fact in enumerate(facts, 1))
+    prompt = _LOCAL_PROMPT
+    kinds = {node.split(":", 1)[0] for node in anchors}
+    if {"Model", "ErrorCode"} <= kinds and "-REPLACED_BY->" in context:
+        prompt += (
+            " В ответе о детали, соответствующей ошибке, первым называй актуальный артикул. "
+            "Используй исходный артикул только для объяснения цепочки замены или если запросили исходную деталь."
+        )
+    text = _ask(llm, prompt, question, context)
+    if set(find_codes(text)) - set(find_codes(f"{question}\n{context}")):
+        return Answer(_NOT_FOUND, refused=True)
+    return _answer(text, sources, facts)
+
+
+def _anchors(question: str, kb: KnowledgeBase) -> set[str] | None:
     anchors = {f"{code_type(code)}:{code}" for code in find_codes(question)}
-    if anchors.difference(graph):
-        return Answer(_NOT_FOUND, refused=True)
+    if anchors.difference(kb.graph):
+        return None
     anchors.update(f"{kind}:{name}" for kind, name in find_names(question, kb.vocabulary))
-    anchors.intersection_update(graph.nodes)
+    return anchors.intersection(kb.graph.nodes)
+
+
+def _nearby_edges(graph: nx.DiGraph, anchors: set[str], question: str) -> set[tuple[str, str]]:
     if not anchors:
-        return Answer(_NOT_FOUND, refused=True)
+        return set()
 
     nearby = graph.to_undirected(as_view=True)
     if len(anchors) == 1:
@@ -46,17 +68,11 @@ def local_search(question: str, kb: KnowledgeBase, llm: LLMClient) -> Answer:
                         edges.add((left, right))
                     if graph.has_edge(right, left):
                         edges.add((right, left))
-        supplier = any(stem in question.casefold() for stem in ("поставщик", "поставля", "поставк"))
+    query = question.casefold()
+    supplier = any(stem in query for stem in ("поставщик", "поставля", "поставк"))
+    if len(anchors) > 1 or supplier or any(stem in query for stem in ("замен", "снят", "снял", "актуальн")):
         _add_replacements(graph, edges, supplier)
-
-    facts, sources = _local_context(graph, edges)
-    if not facts:
-        return Answer(_NOT_FOUND, refused=True)
-    context = "\n".join(f"{i}. {fact}" for i, fact in enumerate(facts, 1))
-    text = _ask(llm, _LOCAL_PROMPT, question, context)
-    if set(find_codes(text)) - set(find_codes(f"{question}\n{context}")):
-        return Answer(_NOT_FOUND, refused=True)
-    return _answer(text, sources, facts)
+    return edges
 
 
 def _add_replacements(graph: nx.DiGraph, edges: set[tuple[str, str]], supplier: bool) -> None:
@@ -93,19 +109,63 @@ def _local_context(graph: nx.DiGraph, edges: set[tuple[str, str]]) -> tuple[list
     return facts, _documents(chunks)
 
 
+def _line_context(graph: nx.DiGraph, lines: set[str]) -> tuple[list[str], list[str]]:
+    """Собирает данные по линейке, включая рёбра между сообществами."""
+    facts, links = [], set()
+    for line in sorted(lines):
+        by_model, by_component = Counter(), Counter()
+        for model, _, membership in graph.in_edges(line, data=True):
+            if membership["type"] != "BELONGS_TO":
+                continue
+            for _, target, relation in graph.out_edges(model, data=True):
+                if relation["type"] == "FAILED":
+                    weight = relation["weight"]
+                    by_model[graph.nodes[model]["name"]] += weight
+                    by_component[graph.nodes[target]["name"]] += weight
+                    links.add((model, target))
+                    links.add((model, line))
+                elif relation["type"] == "HAS_PART":
+                    for _, new, replacement in graph.out_edges(target, data=True):
+                        if replacement["type"] == "REPLACED_BY":
+                            links.update(((model, line), (model, target), (target, new)))
+        for label, counts in (("по узлам", by_component), ("по моделям", by_model)):
+            if counts:
+                totals = ", ".join(f"{name}: {count}" for name, count in sorted(counts.items()))
+                highest = max(counts.values())
+                leaders = ", ".join(sorted(name for name, weight in counts.items() if weight == highest))
+                facts.append(
+                    f"Линейка {graph.nodes[line]['name']}, суммы весов FAILED {label}: {totals}. "
+                    f"Наибольший вес {label}: {leaders} ({highest})."
+                )
+    relations, sources = _local_context(graph, links)
+    return facts + relations, sources
+
+
 def global_search(question: str, kb: KnowledgeBase, llm: LLMClient) -> Answer:
     """Получает частичные ответы по сводкам и объединяет полезные."""
+    anchors = _anchors(question, kb)
+    if anchors is None:
+        return Answer(_NOT_FOUND, refused=True)
+    lines = {node for node in anchors if node.startswith("ProductLine:")}
+    if lines and lines == anchors:
+        facts, fact_sources = _line_context(kb.graph, lines)
+    else:
+        facts, fact_sources = _local_context(kb.graph, _nearby_edges(kb.graph, anchors, question))
+    evidence = "\n".join(facts)
+    communities = [c for c in kb.communities if c.summary.strip()]
+    focus = max(communities, key=lambda c: len(anchors.intersection(c.nodes)), default=None)
     partials = []
     chunks = []
-    for community in kb.communities:
-        if not community.summary.strip():
-            continue
+    for community in communities:
+        summary = community.summary
+        if community is focus and evidence:
+            summary += f"\n\nПроверенные данные графа для вопроса:\n{evidence}"
         reply = _ask(
             llm,
             "Ответь на вопрос по одной сводке. Сохрани важные факты и числа. Оцени полезность от 0 до 10, "
             "где 0 означает, что данных для ответа нет. Запиши частичный ответ в answer, а оценку в score.",
             question,
-            community.summary,
+            summary,
             json_schema=MAP_SCHEMA,
         )
         try:
@@ -128,11 +188,29 @@ def global_search(question: str, kb: KnowledgeBase, llm: LLMClient) -> Answer:
     if not partials:
         return Answer(_NOT_FOUND, refused=True)
     context = "\n".join(f"- {text}" for _, text in sorted(partials, key=lambda item: -item[0]))
-    text = _ask(
-        llm,
+    system = (
         "Объедини частичные ответы, относящиеся к вопросу. Используй только их факты и числа. "
         "Учитывай область каждого частичного ответа и не считай повторяющиеся факты дважды. "
-        f"Если итоговый ответ из них получить нельзя, напиши: {_NOT_FOUND}",
+        f"Если итоговый ответ из них получить нельзя, напиши: {_NOT_FOUND}"
+    )
+    if evidence:
+        system = (
+            "Ответь на вопрос по проверенным фактам графа и частичным ответам. "
+            "При расхождениях опирайся на факты графа. В обзорных вопросах используй "
+            "готовые суммы весов по нужной линейке, не пересчитывай их по частичным ответам. "
+            "REPLACED_BY — связь от старой детали к актуальной; для замены пройди цепочку до конца. "
+            f"Если данных о нужном факте нет, ответь: {_NOT_FOUND}"
+        )
+        if lines and lines == anchors:
+            system += (
+                " Если в готовой таблице есть запрошенный показатель, назови указанный в ней максимум и его значение. "
+                "Отсутствие данных в отдельных сводках не опровергает таблицу по всей линейке. Отвечай кратко."
+            )
+        context = f"Проверенные факты графа:\n{evidence}\n\nЧастичные ответы:\n{context}"
+        chunks.extend(fact_sources)
+    text = _ask(
+        llm,
+        system,
         question,
         context,
     )

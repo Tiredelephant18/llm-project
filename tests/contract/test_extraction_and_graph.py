@@ -119,6 +119,47 @@ def test_broken_answer_is_retried_once():
     assert len(llm.requests) == 2 and len(result.relations) == 3
 
 
+def test_reversed_manual_links_are_corrected_when_supported_by_the_part_row():
+    manual = Chunk(
+        "manual_AR-210.md#0",
+        "manual_AR-210.md",
+        "# Витрина AR-210\n\n## Состав узлов\n"
+        "- пусковое реле – деталь P-1042, поставщик «ХолодКомплект»\n"
+        "- компрессор – деталь P-1010, поставщик «КомпрессорМаш»",
+    )
+    answer = reply(relations=[
+        ("Part", "P-1042", "HAS_PART", "Model", "AR-210"),
+        ("Component", "пусковое реле", "IS_A", "Part", "P-1042"),
+        ("Component", "компрессор", "IS_A", "Part", "P-1042"),
+    ])
+    result = extract_chunk(manual, FakeLLM([answer]))
+    assert triples(result) == {
+        ("Model:AR-210", "HAS_PART", "Part:P-1042"),
+        ("Part:P-1042", "IS_A", "Component:пусковое реле"),
+        ("Model:AR-210", "HAS_PART", "Part:P-1010"),
+        ("Part:P-1010", "IS_A", "Component:компрессор"),
+    }
+    assert result.dropped == 1
+
+
+def test_explicit_diagnosis_and_regimen_are_recovered_when_model_omits_them():
+    incident = Chunk(
+        "report_demo.md#0",
+        "report_demo.md",
+        "Оборудование: витрина ar 210. На панели горел код Е-17.\n"
+        "Диагностика показала отказ узла: пусковое реле.",
+    )
+    procedure = Chunk(
+        "procedure_demo.md#0", "procedure_demo.md", "Регламент SP-104 применяется при ошибке E-17."
+    )
+    assert triples(extract_chunk(incident, FakeLLM([reply()]))) == {
+        ("Model:AR-210", "FAILED", "Component:пусковое реле")
+    }
+    assert triples(extract_chunk(procedure, FakeLLM([reply()]))) == {
+        ("ErrorCode:E-17", "FIXED_BY", "Procedure:SP-104")
+    }
+
+
 def test_two_broken_answers_give_an_empty_result_without_an_exception():
     for broken in (
         "это не JSON",

@@ -1,21 +1,23 @@
 """Извлечение сущностей и связей из чанка. Требование FR-1."""
 
-from assistant.infra.llm import LLMClient
-from assistant.infra.schemas import (
-    Chunk,
-    Entity,
-    ENTITY_TYPES,
-    EXTRACTION_SCHEMA,
-    ExtractionResult,
-    Relation,
-    RELATION_SIGNATURES,
-)
-import json 
+import json
+import re
+
 from assistant.infra.config import vocabulary
 from assistant.infra.grounding import (
     CODE_TYPES,
     canonical_name,
     find_codes,
+)
+from assistant.infra.llm import LLMClient
+from assistant.infra.schemas import (
+    ENTITY_TYPES,
+    EXTRACTION_SCHEMA,
+    RELATION_SIGNATURES,
+    Chunk,
+    Entity,
+    ExtractionResult,
+    Relation,
 )
 
 EXTRACTION_PROMPT = """
@@ -68,6 +70,32 @@ EXTRACTION_PROMPT = """
   ]
 }
 """
+
+
+MANUAL_PARTS_GUIDANCE = """
+Для каждой строки «узел – деталь КОД, поставщик НАЗВАНИЕ» извлеки три связи.
+Код модели возьми из заголовка или фразы перед списком. Копируй артикул целиком.
+Пример для AR-999 и строки «контроллер – деталь P-8888, поставщик „АвтоматикаСевер“»:
+{"entities":[],"relations":[
+{"subject_type":"Model","subject":"AR-999","type":"HAS_PART","object_type":"Part","object":"P-8888"},
+{"subject_type":"Part","subject":"P-8888","type":"IS_A","object_type":"Component","object":"контроллер"},
+{"subject_type":"Part","subject":"P-8888","type":"SUPPLIED_BY","object_type":"Supplier","object":"АвтоматикаСевер"}
+]}
+Добавь BELONGS_TO, если модель прямо отнесена к линейке. Указывай в entities только
+сущности, которых ещё нет в relations. Верни компактный JSON без пояснений.
+"""
+
+BULLETIN_GUIDANCE = """
+В бюллетене копируй артикулы посимвольно, включая последнюю цифру и букву.
+Если деталь снята, а вместо неё устанавливается другая, REPLACED_BY идёт от снятой
+к установленной. Если рядом с артикулом указан узел, добавь IS_A.
+Перед ответом проверь, что каждый артикул есть в тексте в точности.
+"""
+
+MANUAL_PART_LINE = re.compile(r"^- (.+?)\s+[–—-]\s+деталь\s+(P-\d+[A-Z]*)\b")
+PROCEDURE_RULE = re.compile(r"^Регламент (.+?) применяется при ошибке ([^.\n]+)\.", re.M)
+REPORT_MODEL = re.compile(r"^Оборудование:\s*([^.\n]+)", re.M)
+REPORT_FAILURE = re.compile(r"^Диагностика показала отказ узла:\s*([^.\n]+)", re.M)
 
 
 def parse_response(content: str) -> dict:
@@ -170,6 +198,55 @@ def _validate_entities(
 
 
 
+def _manual_pairs(text: str, vocab: dict[str, list[str]]) -> set[tuple[str, str, str]]:
+    title, _, body = text.partition("\n")
+    assembly = body.partition("## Состав узлов")[2].split("\n## ", 1)[0]
+    model_codes = find_codes(title)
+    if not assembly or len(model_codes) != 1:
+        return set()
+    pairs = set()
+    for line in assembly.splitlines():
+        match = MANUAL_PART_LINE.match(line)
+        if match:
+            label, part = match.groups()
+            pairs.add((model_codes[0], "HAS_PART", part))
+            component = canonical_name("Component", label, vocab)
+            if component:
+                pairs.add((part, "IS_A", component))
+    return pairs
+
+
+def _explicit_relations(chunk: Chunk, vocab: dict[str, list[str]]) -> list[dict]:
+    """Восстанавливает связи из явно размеченных полей документа."""
+    pairs = set()
+    if chunk.doc_id.startswith("manual_"):
+        pairs = _manual_pairs(chunk.text, vocab)
+    elif chunk.doc_id.startswith("procedure_"):
+        for raw_procedure, raw_error in PROCEDURE_RULE.findall(chunk.text):
+            procedures, errors = find_codes(raw_procedure), find_codes(raw_error)
+            if len(procedures) == len(errors) == 1:
+                pairs.add((errors[0], "FIXED_BY", procedures[0]))
+    elif chunk.doc_id.startswith("report_"):
+        equipment = REPORT_MODEL.search(chunk.text)
+        diagnosis = REPORT_FAILURE.search(chunk.text)
+        if equipment and diagnosis:
+            models = find_codes(equipment[1])
+            component = canonical_name("Component", diagnosis[1], vocab)
+            if len(models) == 1 and component:
+                pairs.add((models[0], "FAILED", component))
+
+    return [
+        {
+            "subject_type": RELATION_SIGNATURES[kind][0],
+            "subject": subject,
+            "type": kind,
+            "object_type": RELATION_SIGNATURES[kind][1],
+            "object": obj,
+        }
+        for subject, kind, obj in sorted(pairs)
+    ]
+
+
 def _validate_relations(
     raw_relations: list[dict],
     entities: list[Entity],
@@ -189,6 +266,7 @@ def _validate_relations(
     valid_relations = []
     seen = set()
     dropped = 0
+    manual_pairs = _manual_pairs(text, vocab)
 
     for raw in raw_relations:
         subject_type = raw["subject_type"]
@@ -222,6 +300,15 @@ def _validate_relations(
             dropped += 1
             continue
 
+        relation_type = raw["type"]
+        # Исправляем перестановку концов только при явном подтверждении строкой комплектации.
+        if (
+            RELATION_SIGNATURES[relation_type] == (object_type, subject_type)
+            and (object_name, relation_type, subject_name) in manual_pairs
+        ):
+            subject_type, object_type = object_type, subject_type
+            subject_name, object_name = object_name, subject_name
+
         subject_key = (subject_type, subject_name)
         object_key = (object_type, object_name)
 
@@ -238,7 +325,7 @@ def _validate_relations(
 
         relation = Relation(
             subject=subject,
-            type=raw["type"],
+            type=relation_type,
             object=obj,
         )
 
@@ -279,13 +366,20 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
     # TODO: запрос к модели, разбор JSON, проверки по тексту чанка и словарю
 
     vocab = vocabulary()
+    prompt = EXTRACTION_PROMPT
+    max_tokens = 1024
+    if "## Состав узлов" in chunk.text:
+        prompt += MANUAL_PARTS_GUIDANCE
+        max_tokens = 3072
+    elif chunk.doc_id.startswith("bulletin_"):
+        prompt += BULLETIN_GUIDANCE
     messages = [
-        {"role": "system", "content": EXTRACTION_PROMPT},
+        {"role": "system", "content": prompt},
         {"role": "user", "content": chunk.text},
     ]
 
     for attempt in range(2):
-        response = llm.chat(messages=messages, json_schema=EXTRACTION_SCHEMA)
+        response = llm.chat(messages=messages, json_schema=EXTRACTION_SCHEMA, max_tokens=max_tokens)
         try:
             data = parse_response(response.content)
         except ValueError:
@@ -302,7 +396,7 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
 
         entities, dropped_entities = _validate_entities(data["entities"], chunk.text, vocab)
         entities, relations, dropped_relations = _validate_relations(
-            data["relations"], entities, chunk.text, vocab
+            [*data["relations"], *_explicit_relations(chunk, vocab)], entities, chunk.text, vocab
         )
         return ExtractionResult(
             chunk_id=chunk.chunk_id,

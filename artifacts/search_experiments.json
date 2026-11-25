@@ -1,0 +1,246 @@
+{
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "dataset": "data/questions_dev.jsonl",
+  "stages": [
+    {
+      "stage": "Исходный прогон",
+      "nodes": 78,
+      "edges": 40,
+      "communities": 43,
+      "relation_precision": 1.0,
+      "relation_recall": 0.304,
+      "failure_weight": 16,
+      "modes": {
+        "baseline": {
+          "correct": 12,
+          "questions": 24,
+          "accuracy": 0.5,
+          "source_recall": 0.856,
+          "tokens_per_question": 1353.333,
+          "llm_calls_per_question": 1.0
+        },
+        "local": {
+          "correct": 5,
+          "questions": 24,
+          "accuracy": 0.208,
+          "source_recall": 0.225,
+          "tokens_per_question": 247.125,
+          "llm_calls_per_question": 0.542
+        },
+        "global": {
+          "correct": 3,
+          "questions": 24,
+          "accuracy": 0.125,
+          "source_recall": 0.125,
+          "tokens_per_question": 17540.458,
+          "llm_calls_per_question": 43.958
+        },
+        "agent": {
+          "correct": 5,
+          "questions": 24,
+          "accuracy": 0.208,
+          "source_recall": 0.188,
+          "tokens_per_question": 5048.083,
+          "llm_calls_per_question": 9.833
+        }
+      }
+    },
+    {
+      "stage": "Улучшенное извлечение",
+      "nodes": 122,
+      "edges": 208,
+      "communities": 25,
+      "relation_precision": 1.0,
+      "relation_recall": 0.832,
+      "failure_weight": 16,
+      "modes": {
+        "baseline": {
+          "correct": 12,
+          "questions": 24,
+          "accuracy": 0.5,
+          "source_recall": 0.856,
+          "tokens_per_question": 1353.333,
+          "llm_calls_per_question": 1.0
+        },
+        "local": {
+          "correct": 15,
+          "questions": 24,
+          "accuracy": 0.625,
+          "source_recall": 0.6,
+          "tokens_per_question": 629.625,
+          "llm_calls_per_question": 0.833
+        },
+        "global": {
+          "correct": 4,
+          "questions": 24,
+          "accuracy": 0.167,
+          "source_recall": 0.062,
+          "tokens_per_question": 10592.0,
+          "llm_calls_per_question": 25.917
+        },
+        "agent": {
+          "correct": 12,
+          "questions": 24,
+          "accuracy": 0.5,
+          "source_recall": 0.562,
+          "tokens_per_question": 4448.0,
+          "llm_calls_per_question": 7.083
+        }
+      }
+    },
+    {
+      "stage": "Новый поиск на том же графе",
+      "nodes": 122,
+      "edges": 208,
+      "communities": 25,
+      "relation_precision": 1.0,
+      "relation_recall": 0.832,
+      "failure_weight": 16,
+      "modes": {
+        "baseline": {
+          "correct": 12,
+          "questions": 24,
+          "accuracy": 0.5,
+          "source_recall": 0.856,
+          "tokens_per_question": 1353.333,
+          "llm_calls_per_question": 1.0
+        },
+        "local": {
+          "correct": 15,
+          "questions": 24,
+          "accuracy": 0.625,
+          "source_recall": 0.6,
+          "tokens_per_question": 632.917,
+          "llm_calls_per_question": 0.833
+        },
+        "global": {
+          "correct": 12,
+          "questions": 24,
+          "accuracy": 0.5,
+          "source_recall": 0.375,
+          "tokens_per_question": 11156.625,
+          "llm_calls_per_question": 25.917
+        },
+        "agent": {
+          "correct": 13,
+          "questions": 24,
+          "accuracy": 0.542,
+          "source_recall": 0.562,
+          "tokens_per_question": 4777.917,
+          "llm_calls_per_question": 7.083
+        }
+      }
+    },
+    {
+      "stage": "Поиск и дополненный граф",
+      "nodes": 122,
+      "edges": 274,
+      "communities": 12,
+      "relation_precision": 1.0,
+      "relation_recall": 0.963,
+      "failure_weight": 40,
+      "modes": {
+        "baseline": {
+          "correct": 12,
+          "questions": 24,
+          "accuracy": 0.5,
+          "source_recall": 0.856,
+          "tokens_per_question": 1353.333,
+          "llm_calls_per_question": 1.0
+        },
+        "local": {
+          "correct": 18,
+          "questions": 24,
+          "accuracy": 0.75,
+          "source_recall": 0.75,
+          "tokens_per_question": 979.333,
+          "llm_calls_per_question": 0.875
+        },
+        "global": {
+          "correct": 15,
+          "questions": 24,
+          "accuracy": 0.625,
+          "source_recall": 0.625,
+          "tokens_per_question": 6295.792,
+          "llm_calls_per_question": 11.292
+        },
+        "agent": {
+          "correct": 20,
+          "questions": 24,
+          "accuracy": 0.833,
+          "source_recall": 0.875,
+          "tokens_per_question": 4897.792,
+          "llm_calls_per_question": 5.083
+        }
+      }
+    }
+  ],
+  "single_chunk_probe": [
+    {
+      "max_tokens": 1024,
+      "chunk": "manual_AR-210.md#0",
+      "completions": [
+        {
+          "finish_reason": "length",
+          "completion_tokens": 1024
+        },
+        {
+          "finish_reason": "length",
+          "completion_tokens": 1024
+        }
+      ],
+      "entities": 0,
+      "relations": [],
+      "relation_count": 0
+    },
+    {
+      "max_tokens": 2048,
+      "chunk": "manual_AR-210.md#0",
+      "completions": [
+        {
+          "finish_reason": "stop",
+          "completion_tokens": 1217
+        }
+      ],
+      "entities": 23,
+      "relations": [
+        [
+          "Model:AR-210",
+          "BELONGS_TO",
+          "ProductLine:Арктика"
+        ],
+        [
+          "Part:P-1010",
+          "SUPPLIED_BY",
+          "Supplier:КомпрессорМаш"
+        ],
+        [
+          "Part:P-1014",
+          "SUPPLIED_BY",
+          "Supplier:ВентПром"
+        ],
+        [
+          "Part:P-1018",
+          "SUPPLIED_BY",
+          "Supplier:ТермоПрибор"
+        ],
+        [
+          "Part:P-1022",
+          "SUPPLIED_BY",
+          "Supplier:АвтоматикаСевер"
+        ],
+        [
+          "Part:P-1026",
+          "SUPPLIED_BY",
+          "Supplier:ХолодКомплект"
+        ],
+        [
+          "Part:P-1042",
+          "SUPPLIED_BY",
+          "Supplier:ХолодКомплект"
+        ]
+      ],
+      "relation_count": 7
+    }
+  ]
+}

@@ -121,6 +121,30 @@ def test_global_search_refuses_when_no_summary_is_useful(kb):
     assert answer.refused and len(llm.requests) == 2
 
 
+def test_global_search_refuses_an_unknown_model_before_reading_summaries(kb):
+    llm = FakeLLM([])
+    assert global_search("Что делать при E-17 на AR-999?", kb, llm).refused
+    assert llm.requests == []
+
+
+def test_global_search_counts_failures_across_communities_for_requested_line(kb):
+    kb.graph.add_node("Model:BZ-110", type="Model", name="BZ-110", sources=[])
+    kb.graph.add_edge("Model:BZ-110", "Component:пусковое реле", type="FAILED", weight=100, sources=["other.md#0"])
+    llm = FakeLLM([
+        '{"answer": "", "score": 0}',
+        '{"answer": "Чаще всего отказывает пусковое реле.", "score": 9}',
+        "Чаще всего отказывает пусковое реле.",
+    ])
+    answer = global_search("Какой узел чаще всего отказывает в линейке «Арктика»?", kb, llm)
+
+    assert "пусковое реле: 39" in said_to_model(llm, 1)
+    assert "пусковое реле: 39" in said_to_model(llm)
+    assert "BZ-110" not in said_to_model(llm)
+    assert "report_R-2025-001.md" in answer.sources
+    assert "report_R-2025-002.md" in answer.sources
+    assert "other.md" not in answer.sources
+
+
 def test_global_search_survives_a_broken_partial_answer(kb):
     llm = FakeLLM(["это не JSON", '{"answer": "Отказывает пусковое реле.", "score": 5}', "Отказывает пусковое реле."])
     answer = global_search("Какой узел отказывает чаще всего?", kb, llm)
