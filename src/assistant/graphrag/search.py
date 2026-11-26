@@ -26,7 +26,8 @@ _LOCAL_PROMPT = (
 def local_search(question: str, kb: KnowledgeBase, llm: LLMClient) -> Answer:
     """Находит связи около сущностей из вопроса и передаёт их модели."""
     anchors = _anchors(question, kb) or set()
-    facts, sources = _local_context(kb.graph, _nearby_edges(kb.graph, anchors, question))
+    edges = _nearby_edges(kb.graph, anchors, question)
+    facts, sources = _local_context(kb.graph, edges)
     if not facts:
         return Answer(_NOT_FOUND, refused=True)
     context = "\n".join(f"{i}. {fact}" for i, fact in enumerate(facts, 1))
@@ -39,8 +40,57 @@ def local_search(question: str, kb: KnowledgeBase, llm: LLMClient) -> Answer:
         )
     text = _ask(llm, prompt, question, context)
     if set(find_codes(text)) - set(find_codes(f"{question}\n{context}")):
-        return Answer(_NOT_FOUND, refused=True)
-    return _answer(text, sources, facts)
+        text = _NOT_FOUND
+    answer = _answer(text, sources, facts)
+    current = _current_part(kb.graph, anchors, question)
+    if current and current in find_codes(context) and (answer.refused or current not in find_codes(text)):
+        return Answer(f"Актуальная деталь — {current}.", sources=sources, facts=facts)
+    return answer
+
+
+def _current_part(graph: nx.DiGraph, anchors: set[str], question: str) -> str | None:
+    """Выводит артикул, когда модель, узел и маршрут замены имеют однозначную связь."""
+    query = question.casefold()
+    if any(stem in query for stem in ("постав", "регламент", "исходн", "штатн", "изначальн", "старый", "старая")):
+        return None
+
+    parts = {node for node in anchors if node.startswith("Part:")}
+    if parts:
+        if len(anchors) != 1 or "замен" not in query:
+            return None
+    else:
+        models = {node for node in anchors if node.startswith("Model:")}
+        if len(models) != 1 or not any(stem in query for stem in ("детал", "артикул")):
+            return None
+        nodes = {node for node in anchors if node.startswith("Component:")}
+        errors = {node for node in anchors if node.startswith("ErrorCode:")}
+        if errors:
+            indicated = {target for _, target, kind in graph.out_edges(errors, data="type") if kind == "INDICATES"}
+            nodes = nodes & indicated if nodes else indicated
+        if len(nodes) != 1:
+            return None
+        parts = {
+            part for _, part, kind in graph.out_edges(models, data="type")
+            if kind == "HAS_PART" and any(
+                target in nodes and relation == "IS_A" for _, target, relation in graph.out_edges(part, data="type")
+            )
+        }
+
+    if len(parts) != 1:
+        return None
+    part = start = next(iter(parts))
+    seen = set()
+    while part not in seen:
+        seen.add(part)
+        replacements = [target for _, target, kind in graph.out_edges(part, data="type") if kind == "REPLACED_BY"]
+        if not replacements:
+            if part == start and start in anchors:
+                return None
+            return graph.nodes[part]["name"]
+        if len(replacements) != 1:
+            return None
+        part = replacements[0]
+    return None
 
 
 def _anchors(question: str, kb: KnowledgeBase) -> set[str] | None:

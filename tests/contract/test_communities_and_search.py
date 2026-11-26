@@ -77,6 +77,18 @@ def test_local_search_with_one_anchor_reads_its_neighbourhood(kb):
     assert not answer.refused
 
 
+def test_local_search_corrects_an_old_part_only_for_a_current_part_question(kb):
+    kb.graph.add_node("Part:P-1042C", type="Part", name="P-1042C", sources=[])
+    kb.graph.add_edge("Part:P-1042B", "Part:P-1042C", type="REPLACED_BY", weight=1, sources=["next.md#0"])
+    model_text = "Ошибке соответствует P-1042."
+    answer = local_search("Какая деталь соответствует ошибке E-17 на AR-210?", kb, FakeLLM([model_text]))
+    assert answer.text == "Актуальная деталь — P-1042C."
+    assert "next.md" in answer.sources and not answer.refused
+
+    original = local_search("Какая исходная деталь соответствует ошибке E-17 на AR-210?", kb, FakeLLM([model_text]))
+    assert original.text == model_text
+
+
 def test_local_search_finds_anchors_written_sloppily_and_by_vocabulary_name(kb):
     llm = FakeLLM(["Деталь P-1042 заменена на P-1042B."])
     local_search("какая деталь стоит как «пусковое реле» в ar 210?", kb, llm)

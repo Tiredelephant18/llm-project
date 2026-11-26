@@ -3,7 +3,7 @@
     "mode": "agent",
     "model": "qwen3:4b-instruct-2507-q4_K_M",
     "questions": 24,
-    "accuracy": 0.833,
+    "accuracy": 0.917,
     "by_type": {
       "local": {
         "questions": 5,
@@ -11,7 +11,7 @@
       },
       "multihop": {
         "questions": 7,
-        "accuracy": 0.857
+        "accuracy": 1.0
       },
       "global": {
         "questions": 4,
@@ -19,7 +19,7 @@
       },
       "tool": {
         "questions": 5,
-        "accuracy": 0.8
+        "accuracy": 1.0
       },
       "refusal": {
         "questions": 3,
@@ -27,10 +27,10 @@
       }
     },
     "fabricated_rate": 0.0,
-    "source_recall": 0.875,
+    "source_recall": 0.938,
     "rejected_calls_rate": 0.065,
-    "llm_calls_per_question": 5.083,
-    "tokens_per_question": 4897.792
+    "llm_calls_per_question": 5.042,
+    "tokens_per_question": 4831.625
   },
   "rows": [
     {
@@ -548,12 +548,26 @@
       "id": "dev-07",
       "type": "multihop",
       "question": "Какую деталь заказать при ошибке E-22 на GS-510?",
-      "answer": "В базе знаний не найдено.",
-      "correct": false,
-      "refused": true,
+      "answer": "При ошибке E-22 на GS-510 необходимо заказать деталь P-3162, так как она является циркуляционным насосом, который отвечает за работу системы и указан как неисправный компонент в документах.",
+      "correct": true,
+      "refused": false,
       "fabricated": [],
-      "sources": [],
-      "source_recall": 0.0,
+      "sources": [
+        "manual_GS-410.md",
+        "manual_GS-420.md",
+        "manual_GS-510.md",
+        "manual_GS-520.md",
+        "procedure_SP-112.md",
+        "report_R-2025-007.md",
+        "report_R-2025-013.md",
+        "report_R-2025-015.md",
+        "report_R-2025-018.md",
+        "report_R-2025-019.md",
+        "report_R-2025-025.md",
+        "report_R-2025-029.md",
+        "report_R-2025-035.md"
+      ],
+      "source_recall": 1.0,
       "steps": [
         {
           "tool": "search_knowledge",
@@ -561,17 +575,36 @@
             "question": "Какую деталь заказать при ошибке E-22 на GS-510?"
           },
           "result": {
-            "answer": "В базе знаний не найдено.",
-            "facts": [],
-            "sources": [],
-            "refused": true
+            "answer": "Актуальная деталь — P-3162.",
+            "facts": [
+              "E-22 -INDICATES-> циркуляционный насос",
+              "GS-510 -FAILED-> циркуляционный насос (случаев: 2)",
+              "GS-510 -HAS_PART-> P-3162",
+              "P-3162 -IS_A-> циркуляционный насос"
+            ],
+            "sources": [
+              "manual_GS-410.md",
+              "manual_GS-420.md",
+              "manual_GS-510.md",
+              "manual_GS-520.md",
+              "procedure_SP-112.md",
+              "report_R-2025-007.md",
+              "report_R-2025-013.md",
+              "report_R-2025-015.md",
+              "report_R-2025-018.md",
+              "report_R-2025-019.md",
+              "report_R-2025-025.md",
+              "report_R-2025-029.md",
+              "report_R-2025-035.md"
+            ],
+            "refused": false
           },
           "error": null
         }
       ],
       "rejected_steps": 0,
       "llm_calls": 3,
-      "tokens": 2409
+      "tokens": 2704
     },
     {
       "id": "dev-08",
@@ -1623,8 +1656,8 @@
       "id": "dev-17",
       "type": "tool",
       "question": "Ошибка E-17 на AR-210. Какую деталь заказать, есть ли она на складе в Казани и сколько она стоит?",
-      "answer": "Деталь, соответствующая ошибке E-17 на AR-210, — это пусковое реле с номером P-1042.\n\nНа складе в Казани остаток P-1042: 0.\n\nДеталь P-1042 отменена и не доступна.\n\nЦена: 3460 руб. — не актуальна.\n\nВ базе знаний не найдено.",
-      "correct": false,
+      "answer": "Для устранения ошибки E-17 на модели AR-210 необходимо заказать деталь P-1042B (пусковое реле).\n\nНа складе в Казани остаток детали: 3 штуки.  \nЦена детали: 2630 рублей.\n\nДеталь доступна и в наличии.",
+      "correct": true,
       "refused": false,
       "fabricated": [],
       "sources": [
@@ -1652,7 +1685,7 @@
             "question": "Ошибка E-17 на AR-210. Какая деталь соответствует этой ошибке?"
           },
           "result": {
-            "answer": "Ошибка E-17 указывает на пусковое реле (связь E-17 -INDICATES-> пусковое реле).\n\nДеталь AR-210 имеет часть P-1042 (связь AR-210 -HAS_PART-> P-1042), и P-1042 является пусковым реле (P-1042 -IS_A-> пусковое реле).\n\nСледовательно, ошибка E-17 на AR-210 связана с пусковым реле, которое является деталью P-1042.\n\nТаким образом, деталь, соответствующая ошибке E-17 на AR-210, — это **P-1042**.\n\nОтвет: **P-1042**.",
+            "answer": "Актуальная деталь — P-1042B.",
             "facts": [
               "P-1042 -REPLACED_BY-> P-1042B",
               "E-17 -INDICATES-> пусковое реле",
@@ -1684,34 +1717,34 @@
         {
           "tool": "check_stock",
           "args": {
-            "part_id": "P-1042",
+            "part_id": "P-1042B",
             "warehouse": "Казань"
           },
           "result": {
-            "part_id": "P-1042",
+            "part_id": "P-1042B",
             "warehouse": "Казань",
-            "qty": 2,
-            "discontinued": true
+            "qty": 3,
+            "discontinued": false
           },
           "error": null
         },
         {
           "tool": "get_price",
           "args": {
-            "part_id": "P-1042"
+            "part_id": "P-1042B"
           },
           "result": {
-            "part_id": "P-1042",
+            "part_id": "P-1042B",
             "name": "пусковое реле",
-            "price_rub": 3460,
-            "discontinued": true
+            "price_rub": 2630,
+            "discontinued": false
           },
           "error": null
         }
       ],
       "rejected_steps": 0,
-      "llm_calls": 6,
-      "tokens": 7563
+      "llm_calls": 5,
+      "tokens": 5680
     },
     {
       "id": "dev-18",

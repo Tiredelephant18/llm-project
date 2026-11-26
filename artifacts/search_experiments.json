@@ -173,6 +173,49 @@
           "llm_calls_per_question": 5.083
         }
       }
+    },
+    {
+      "stage": "Проверка артикула",
+      "nodes": 122,
+      "edges": 274,
+      "communities": 12,
+      "relation_precision": 1.0,
+      "relation_recall": 0.963,
+      "failure_weight": 40,
+      "modes": {
+        "baseline": {
+          "correct": 12,
+          "questions": 24,
+          "accuracy": 0.5,
+          "source_recall": 0.856,
+          "tokens_per_question": 1353.333,
+          "llm_calls_per_question": 1.0
+        },
+        "local": {
+          "correct": 19,
+          "questions": 24,
+          "accuracy": 0.792,
+          "source_recall": 1.0,
+          "tokens_per_question": 979.333,
+          "llm_calls_per_question": 0.875
+        },
+        "global": {
+          "correct": 15,
+          "questions": 24,
+          "accuracy": 0.625,
+          "source_recall": 0.625,
+          "tokens_per_question": 6295.792,
+          "llm_calls_per_question": 11.292
+        },
+        "agent": {
+          "correct": 22,
+          "questions": 24,
+          "accuracy": 0.917,
+          "source_recall": 0.938,
+          "tokens_per_question": 4831.625,
+          "llm_calls_per_question": 5.042
+        }
+      }
     }
   ],
   "single_chunk_probe": [
@@ -242,5 +285,15 @@
       ],
       "relation_count": 7
     }
-  ]
+  ],
+  "discarded_by_type": {
+    "full_corpus": {
+      "entities": 78,
+      "relations": 139
+    },
+    "gold_documents": {
+      "entities": 11,
+      "relations": 19
+    }
+  }
 }
